@@ -18,12 +18,12 @@ def main():
     )
     
     # 页面路由
-    if page == "巴西数据出口分析":
+    if page == "中国数据进口分析":
+        data_analysis_for_China.show()
+
+    elif page == "巴西数据出口分析":
         data_analysis_for_brazil.show()
     elif page == "牛肉数据分析":
         data_analysis.show()
-    elif page == "中国数据进口分析":
-        data_analysis_for_China.show()
-
 if __name__ == "__main__":
     main()

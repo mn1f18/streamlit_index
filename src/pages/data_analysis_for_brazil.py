@@ -214,8 +214,8 @@ def process_data(df, select_country, select_year, select_month,select_year1,sele
     # 计算数量表
     volume_total = filtered_df.groupby(["Año", "Mes"])['t'].sum().reset_index()
     volume_country = filtered_df[filtered_df["国家"] == select_country].groupby(["Año", "Mes"])['t'].sum().reset_index()
-    price_df = pd.merge(price_df, volume_country, on=["Año", "Mes"], how='left')
-    price_df.columns = ["年","月","平均KG价格(美元)","t(吨)"]
+    
+    price_df.columns = ["年","月","平均KG价格(美元)"]
     return price_df, volume_total, volume_country
 
 
@@ -272,13 +272,13 @@ def create_barchart(df, start_year, end_year,country):
 
         # Add bars for the difference (t_总计 - t_中国)
         fig.add_trace(go.Bar(
-            y=year_data["t_总计"],  
+            y=year_data["t_总计"]/10000,  
             name=f"Year {year} - t_总计",  # Name for the trace
             x=year_data["月"],
             offsetgroup=year  # Ensure bars for the same year are grouped together
         ))
         fig.add_trace(go.Bar(
-            y=year_data["t_"+country],  
+            y=year_data["t_"+country]/10000,  
             name=f"Year {year} - t_"+country,  # Name for the trace
             x=year_data["月"],
             offsetgroup=year  # Ensure bars for the same year are grouped together
@@ -290,7 +290,7 @@ def create_barchart(df, start_year, end_year,country):
     fig.update_layout(
         title="数据图",
         xaxis_title="月",
-        yaxis_title="t(吨)",
+        yaxis_title="1/10000t(万吨)",
         barmode="group",  # Stacked bar chart within each year
         xaxis=dict(tickmode='array', tickvals=df['月']),  # Month names as ticks
         bargap=0.15,  # Controls the gap between groups of bars (for different years)
@@ -301,6 +301,67 @@ def create_barchart(df, start_year, end_year,country):
 def months_in_year(df,year):
     months_in_year = df[df['Año'] == year]['Mes'].unique()
     return months_in_year
+
+
+def create_time_map(df,volume_ranking):
+    """时间图"""
+    st.write("### 巴西出口到各国数据图")
+    df["年"]=df['Año']
+    df["月"]=df["Mes"]
+    selected_year = st.selectbox(
+        "选择要查看的年份",
+        sorted(df['Año'].unique()),
+        index=len(df['Año'].unique())-1,
+        key = "choose_year"
+    )
+
+    selected_options = st.multiselect(
+        '选择国家', 
+        df["国家"].unique(),
+        default = df.index("中国") if "中国" in df else [],
+        key = "choose_contry")
+    
+
+    #为每一个国家画一个图
+    if selected_options:
+        price_df = df.groupby(["年", "月","国家"])["平均KG价格(美元)"].mean().reset_index()#从新排序
+        price_df =price_df[price_df['年'] == selected_year]#只显示对应年
+        df_filtered = price_df[price_df['国家'].isin(selected_options)]#只显示对应国家
+        colors = px.colors.qualitative.Set2  # 使用 Set2 色板，也可以选择 Set1, Set3 等
+        country_colors = {country: colors[i % len(colors)] for i, country in enumerate(sorted(selected_options))}
+        fig_seasonal_daily_r = px.line(
+            df_filtered,
+            x='月',
+            y='平均KG价格(美元)',
+            color='国家',
+            title=selected_year+'进口价对比',
+            color_discrete_map=country_colors
+        )
+        fig_seasonal_daily_r.update_xaxes(
+            title='月',
+            ticktext=['一月', '二月', '三月', '四月', '五月', '六月', 
+                        '七月', '八月', '九月', '十月', '十一月', '十二月'],
+            tickvals=list(range(1, 13))
+        )
+        fig_seasonal_daily_r.update_yaxes(title='平均KG价格(美元)')
+        
+        # 添加网格线使图表更清晰
+        fig_seasonal_daily_r.update_layout(
+            xaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='LightGray'
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='LightGray'
+            ),
+            showlegend=True,
+            legend_title="国家"
+        )
+        st.plotly_chart(fig_seasonal_daily_r)
+
 
 def create_ranking_tables(df, start_year,start_mon,end_year,end_mon):
     """创建排名表格"""
@@ -320,8 +381,8 @@ def create_ranking_tables(df, start_year,start_mon,end_year,end_mon):
         (df['Mes'].astype(int) >= int(start_mon)) & 
         (df['Mes'].astype(int) <= int(end_mon))
     )
-    filtered_df = df[mask].copy()
-    
+    filtered_df = df[mask].copy()#rank 表
+    time_df = df[mask].copy()#时间图
     st.write("### 巴西出口到各国数据分析")
     
     # 创建年份选择器
@@ -342,6 +403,7 @@ def create_ranking_tables(df, start_year,start_mon,end_year,end_mon):
         list(range(len(filtered_df['国家'].unique())+1)),
         index=10 if  10 <= len(filtered_df['国家'].unique()) else len(filtered_df['国家'].unique())
     )
+
     
     # 创建两列布局
     col1, col2 = st.columns(2)
@@ -412,7 +474,8 @@ def create_ranking_tables(df, start_year,start_mon,end_year,end_mon):
             },
             hide_index=True
         )
-
+    #时间序列图
+    create_time_map(time_df,volume_ranking)#数据表图
 def show():
     st.title("巴西数据出口分析")
     
@@ -485,15 +548,16 @@ def show():
         price_df, volume_total, volume_country = process_data(df, select_country, select_year,select_month, select_year1,select_month1)
         
         # 显示结果
-        st.write(f"巴西总出口价中 {select_country} {select_year}{select_month} ~ {select_year1}{select_month1}")
-        st.write(price_df)
-        st.write(create_tablemap(price_df,select_year,select_year1,select_country))
-        st.write(f"巴西总出口量中{select_country} {select_year}{select_month} ~ {select_year1}{select_month1}占比")
+        st.write(f"巴西 {select_year}{select_month} ~ {select_year1}{select_month1}总出口量及对 {select_country} 出口量")
         # 计算并显示占比
         volume_df = pd.merge(volume_total, volume_country, on=["Año", "Mes"], suffixes=('_总计', f'_{select_country}'))
         volume_df['占比%'] = (volume_df[f't_{select_country}'] / volume_df['t_总计'] * 100).round(2)
-        volume_df.columns = ["年","月","t_总计","t_中国","占比%"]
-        st.write(volume_df)
+        volume_df.columns = ["年","月","t_总计",f"t_{select_country}","占比%"]
+        
+        #合并两个表
+        newprice_df = pd.merge(price_df, volume_df, on=["年", "月"])
+        st.write(newprice_df)
+        st.write(create_tablemap(price_df,select_year,select_year1,select_country))
         st.write(create_barchart(volume_df,select_year,select_year1,select_country))
 
         # 添加排名分析

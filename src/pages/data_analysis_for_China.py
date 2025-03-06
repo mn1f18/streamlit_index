@@ -3,7 +3,7 @@ from src.utils.db import DatabaseConnection
 from src.config import load_config
 import pandas as pd
 import numpy as np
-from st_aggrid import AgGrid, GridOptionsBuilder #测试
+from st_aggrid import AgGrid, GridOptionsBuilder,JsCode #测试
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -55,15 +55,15 @@ def process_data(df, select_country, select_year, select_month,select_year1,sele
     # 计算数量表
     volume_total = filtered_df.groupby(["年", "月"])['t'].sum().reset_index()
     volume_country = filtered_df[filtered_df["国家"] == select_country].groupby(["年", "月"])['t'].sum().reset_index()
-    price_df = pd.merge(price_df, volume_country, on=["年", "月"], how='left')
-    price_df.columns = ["年","月","平均KG价格(美元)","t(吨)"]
+    price_df.columns = ["年","月","平均KG价格(美元)"]
 
     return price_df, volume_total, volume_country
 
 #测试用代码
 def testmessage(df):
-    
+
     gb = GridOptionsBuilder.from_dataframe(df)
+
 
     # Enable features: sorting, filtering, editing, and row selection
     gb.configure_default_column(filterable=True, sortable=True, editable=True)
@@ -76,14 +76,14 @@ def testmessage(df):
     grid_options = gb.build()
 
     # Display Grid and capture events (row selection)
-    response = AgGrid(df, gridOptions=grid_options,theme='ag-theme-alpine', update_mode='MODEL_CHANGED')
+    response = AgGrid(df, gridOptions=grid_options,allow_unsafe_jscode=True,theme=cellsytle_jscode)
     return response
 
 
 #线图
 def create_tablemap(df,start_year,end_year,country):
         """线图"""
-        colors = px.colors.qualitative.Set3  # 使用 Set3 色板，也可以选择 Set1, Set2 等
+        colors = px.colors.qualitative.Set2  # 使用 Set2色板，也可以选择 Set1, Set3 等
         year_colors = {year: colors[i % len(colors)] for i, year in enumerate(sorted(df['年'].unique()))}
         fig_seasonal_daily_r = px.line(
             df,
@@ -133,13 +133,13 @@ def create_barchart(df, start_year, end_year,country):
 
         # Add bars for the difference (t_总计 - t_中国)
         fig.add_trace(go.Bar(
-            y=year_data["t_总计"],  
+            y=year_data["t_总计"]/10000,  
             name=f"Year {year} - t_总计",  # Name for the trace
             x=year_data["月"],
             offsetgroup=year  # Ensure bars for the same year are grouped together
         ))
         fig.add_trace(go.Bar(
-            y=year_data["t_"+country],  
+            y=year_data["t_"+country]/10000,  
             name=f"Year {year} - t_"+country,  # Name for the trace
             x=year_data["月"],
             offsetgroup=year  # Ensure bars for the same year are grouped together
@@ -151,7 +151,7 @@ def create_barchart(df, start_year, end_year,country):
     fig.update_layout(
         title="数据图",
         xaxis_title="月",
-        yaxis_title="t(吨)",
+        yaxis_title="1/10000t(万吨)",
         barmode="group",  # Stacked bar chart within each year
         xaxis=dict(tickmode='array', tickvals=df['月']),  # Month names as ticks
         bargap=0.15,  # Controls the gap between groups of bars (for different years)
@@ -163,6 +163,65 @@ def months_in_year(df,year):
     months_in_year = df[df['年'] == year]['月'].unique()
 
     return months_in_year
+
+def create_time_map(df,volume_ranking):
+    """时间图"""
+    st.write("### 巴西出口到各国数据图")
+
+    selected_year = st.selectbox(
+        "选择要查看的年份",
+        sorted(df['年'].unique()),
+        index=len(df['年'].unique())-1,
+        key = "choose_year"
+    )
+
+    selected_options = st.multiselect(
+        '选择国家', 
+        df["国家"].unique(),
+        default = df.index("中国") if "中国" in df else [],
+        key = "choose_contry")
+    
+
+    #为每一个国家画一个图
+    if selected_options:
+        price_df = df.groupby(["年", "月","国家"])["平均KG价格(美元)"].mean().reset_index()#从新排序
+        price_df =price_df[price_df['年'] == selected_year]#只显示对应年
+        df_filtered = price_df[price_df['国家'].isin(selected_options)]#只显示对应国家
+        colors = px.colors.qualitative.Set2  # 使用 Set2 色板，也可以选择 Set1, Set3 等
+        country_colors = {country: colors[i % len(colors)] for i, country in enumerate(sorted(selected_options))}
+        fig_seasonal_daily_r = px.line(
+            df_filtered,
+            x='月',
+            y='平均KG价格(美元)',
+            color='国家',
+            title=selected_year+'进口价对比',
+            color_discrete_map=country_colors
+        )
+        fig_seasonal_daily_r.update_xaxes(
+            title='月',
+            ticktext=['一月', '二月', '三月', '四月', '五月', '六月', 
+                        '七月', '八月', '九月', '十月', '十一月', '十二月'],
+            tickvals=list(range(1, 13))
+        )
+        fig_seasonal_daily_r.update_yaxes(title='平均KG价格(美元)')
+        
+        # 添加网格线使图表更清晰
+        fig_seasonal_daily_r.update_layout(
+            xaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='LightGray'
+            ),
+            yaxis=dict(
+                showgrid=True,
+                gridwidth=1,
+                gridcolor='LightGray'
+            ),
+            showlegend=True,
+            legend_title="国家"
+        )
+        st.plotly_chart(fig_seasonal_daily_r)
+
 def create_ranking_tables(df, start_year,start_mon,end_year,end_mon):
     """创建排名表格"""
     # 筛选年份范围
@@ -182,7 +241,7 @@ def create_ranking_tables(df, start_year,start_mon,end_year,end_mon):
         (df['月'].astype(int) <= int(end_mon))
     )
     filtered_df = df[mask].copy()
-    
+    time_df = df[mask].copy()#时间图
     st.write("### 各国进口到中国数据分析")
     
     # 创建年份选择器
@@ -273,7 +332,7 @@ def create_ranking_tables(df, start_year,start_mon,end_year,end_mon):
             },
             hide_index=True
         )
-
+    create_time_map(time_df,volume_ranking)#数据表图
 def show():
     st.title("中国数据进口分析")
     
@@ -347,19 +406,16 @@ def show():
         price_df, volume_total, volume_country = process_data(df, select_country, select_year,select_month, select_year1,select_month1)
         
         # 显示结果
-        st.write(f"中国总进口价 {select_country} {select_year} ~ {select_year1}")
-        st.write(price_df)
+        st.write(f"中国 {select_year}{select_month} ~ {select_year1}{select_month1}总进口量及对 {select_country} 进口量")
         
-        #测试代码
-
-        st.write(create_tablemap(price_df,select_year,select_year1,select_country))
-        #结束代码        
-        
-        st.write(f"中国总进口量中 {select_country} {select_year} ~ {select_year1} 占比")
         # 计算并显示占比
         volume_df = pd.merge(volume_total, volume_country, on=["年", "月"], suffixes=('_总计', f'_{select_country}'))
         volume_df['占比%'] = (volume_df[f't_{select_country}'] / volume_df['t_总计'] * 100).round(2)
-        st.write(volume_df)
+        #合并两个表
+        newprice_df = pd.merge(price_df, volume_df, on=["年", "月"])
+        
+        st.write(newprice_df)
+        st.write(create_tablemap(price_df,select_year,select_year1,select_country))
         #测试代码
   
         st.write(create_barchart(volume_df,select_year,select_year1,select_country))
