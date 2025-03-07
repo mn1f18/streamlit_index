@@ -1,6 +1,8 @@
 import streamlit as st
 from src.config import load_config
-from src.pages import data_analysis,data_analysis_for_brazil,data_analysis_for_China
+from src.pages import (data_analysis,data_analysis_for_brazil,
+                       data_analysis_for_China,exchange_rate,
+                       notebook)
 from src.utils.helpers import setup_page
 
 def main():
@@ -14,7 +16,7 @@ def main():
     st.sidebar.title("导航")
     page = st.sidebar.selectbox(
         "选择页面",
-        ["巴西数据出口分析", "牛肉数据分析", "中国数据进口分析"]
+        ["巴西数据出口分析", "牛肉数据分析", "中国数据进口分析","汇率","记事本"]
     )
     
     # 页面路由
@@ -25,5 +27,9 @@ def main():
         data_analysis_for_brazil.show()
     elif page == "牛肉数据分析":
         data_analysis.show()
+    elif page == "汇率":
+        exchange_rate.show()
+    elif page == "记事本":
+        notebook.show()
 if __name__ == "__main__":
     main()

@@ -176,15 +176,23 @@ def load_data():
     config = load_config()
     db = DatabaseConnection(config)
     df = db.query_to_df("SELECT * FROM brazil_beef_export_meta_data")
+    df_1=db.query_to_df("SELECT * FROM BR_beef_weekly_export")
     db.close()
-    
     # 预处理数据
     df.columns = ["Año", "Mes", "Código SA6", "Descripción SA6", "País", "Valor US$ FOB", "Peso (kg)"]
     df["对应翻译"] = df['Código SA6'].map(code_dict).fillna(df['Código SA6'])
     df["国家"] = df['País'].map(country_dict).fillna(df['País'])
     df["平均KG价格(美元)"] = (df['Valor US$ FOB']/df['Peso (kg)']).round(3)
     df['t'] = (df['Peso (kg)']/1000).round(2)
-    return df
+    df_1['date'] = pd.to_datetime(df_1['date'])
+    df_1['年']= df_1['date'].dt.year
+    df_1['月']=df_1['date'].dt.month
+    df_1['date'] = df_1['date'].dt.date
+    df_1=df_1[['date','年','月','1000USD','1000USD_per_day',
+               'ton','ton_per_day','USD_per_ton']]
+    df_1.columns=["date","年","月","千美元(累计值)","日均千美元","吨(累计值)","日均吨数","价格（美元/吨)"]
+
+    return df,df_1
 
 @st.cache_data
 def process_data(df, select_country, select_year, select_month,select_year1,select_month1):
@@ -299,7 +307,10 @@ def create_barchart(df, start_year, end_year,country):
     # Display the plot
     st.plotly_chart(fig)
 def months_in_year(df,year):
-    months_in_year = df[df['Año'] == year]['Mes'].unique()
+    if 'Año' in df.columns:
+        months_in_year = df[df['Año'] == year]['Mes'].unique()
+    else:
+        months_in_year = df[df['年'] == year]['月'].unique()
     return months_in_year
 
 
@@ -476,11 +487,73 @@ def create_ranking_tables(df, start_year,start_mon,end_year,end_mon):
         )
     #时间序列图
     create_time_map(time_df,volume_ranking)#数据表图
+
+
+def create_weekly_export(df):
+    """巴西周度出口数据"""
+    st.write("---")
+    st.write("### 巴西周度出口数据")
+    years = sorted(df["年"].unique())
+    months =sorted(df["月"].unique())
+    closest_year = max(map(int, years))
+    # 创建年份选择器
+    tit2, tit3 ,tit4 ,tit5 = st.columns([1, 1, 1, 1])
+    with tit2:
+        select_year = st.selectbox(
+            "请选择开始年",
+            years,
+            index=years.index(closest_year) if closest_year in years else len(years)-1,  # 默认选择2025年
+            key='start_year_1'
+        )
+    with tit3:
+        months=months_in_year(df,select_year)
+        select_month = st.selectbox(
+            "请选择开始月",
+            months,
+
+            key='start_month_1'
+        )
+    with tit4:
+        select_year1 = st.selectbox(
+            "请选择结束年",
+            years,
+            index=years.index(closest_year) if closest_year in years else len(years)-1,  # 默认选择2025年
+            key='end_year_1'
+        )
+    with tit5:
+        months = months_in_year(df,select_year1)
+        select_month1 = st.selectbox(
+            "请选择结束月",
+            months ,
+
+            key='end_month_1'
+        )        
+    if select_year != select_year1:
+        mask = (
+        ((df['年'].astype(int) > int(select_year)) & 
+        (df['年'].astype(int) < int(select_year1))) | 
+        ((df['年'].astype(int) == int(select_year)) & 
+        (df['月'].astype(int) >= int(select_month))) | 
+        ((df['年'].astype(int) == int(select_year1)) & 
+        (df['月'].astype(int) <= int(select_month1)))
+    )
+    else: 
+        mask = (
+        (df['年'].astype(int) == int(select_year)) & 
+        (df['月'].astype(int) >= int(select_month)) & 
+        (df['月'].astype(int) <= int(select_month1))
+    )
+
+    filtered_df = df[mask].copy()
+    st.dataframe(filtered_df, height=300) 
+
+
+
 def show():
     st.title("巴西数据出口分析")
     
     # 加载数据（使用缓存）
-    df = load_data()
+    df,df_1 = load_data()
     
     if df is not None:
         # 用户界面部分
@@ -563,7 +636,8 @@ def show():
         # 添加排名分析
         st.markdown("---")  # 添加分隔线
         create_ranking_tables(df, select_year,select_month, select_year1,select_month1)
-
+    if df_1 is not None:
+            create_weekly_export(df_1)
     # 示例交互组件
     if st.button("点击我"):
         st.balloons() 
